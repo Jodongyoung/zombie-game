@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZOMBIE MOUNTAIN: ULTIMATE SURVIVAL</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #6b93a3; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; }
+    canvas { display: block; }
+
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
+    #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #ffffff; box-shadow: 0 0 3px rgba(0,0,0,0.8); }
+    #crosshair::before { top: 6px; left: 0; width: 14px; height: 2px; }
+    #crosshair::after { top: 0; left: 6px; width: 2px; height: 14px; }
+
+    #sniper-scope { position: absolute; inset: 0; display: none; pointer-events: none; z-index: 15; background: radial-gradient(circle at center, transparent 38%, black 42%, black 100%); }
+    #sniper-scope::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: rgba(255, 0, 0, 0.8); }
+    #sniper-scope::after { content: ''; position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: rgba(255, 0, 0, 0.8); }
+
+    #hud { position: absolute; top: 24px; left: 24px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); pointer-events: none; z-index: 10; }
+    #hud h1 { margin: 0 0 6px 0; font-size: 24px; color: #ff4d4d; letter-spacing: 2px; }
+    .hud-stat { font-size: 18px; margin: 4px 0; font-weight: bold; }
+    #hp-bar-bg { width: 200px; height: 12px; background: rgba(0,0,0,0.6); border: 2px solid #222; border-radius: 4px; overflow: hidden; margin-top: 4px; margin-bottom: 8px; }
+    #hp-bar { width: 100%; height: 100%; background: #2ecc71; transition: width 0.15s; }
+    
+    #ult-ui { font-size: 21px; font-weight: 900; color: #00f0ff; animation: pulse 1.5s infinite; }
+    .ult-cd { color: #aaa !important; animation: none !important; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+
+    #boss-hud {
+      position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+      width: 460px; max-width: 85vw; display: none; z-index: 12; pointer-events: none;
+      background: rgba(15, 23, 42, 0.8); padding: 10px 16px; border-radius: 8px; border: 2px solid #ef4444;
+    }
+    #boss-name { font-size: 16px; font-weight: 900; color: #ff4d4d; text-align: center; margin-bottom: 6px; text-shadow: 0 2px 4px black; }
+    #boss-bar-bg { width: 100%; height: 14px; background: rgba(0,0,0,0.75); border-radius: 4px; overflow: hidden; }
+    #boss-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #dc2626, #f97316); transition: width 0.12s; }
+
+    #top-right-hint {
+      position: absolute; top: 24px; right: 32px; color: #fff; font-size: 15px; font-weight: bold;
+      background: rgba(0,0,0,0.45); padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.25);
+      pointer-events: none; z-index: 10;
+    }
+
+    #ammo-hud { position: absolute; bottom: 24px; right: 32px; text-align: right; color: #ffffff; text-shadow: 0 2px 6px rgba(0,0,0,0.9); pointer-events: none; z-index: 10; }
+    #slot-list { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px; flex-wrap: wrap; }
+    .slot-box { background: rgba(0,0,0,0.55); border: 2px solid #555; padding: 5px 11px; border-radius: 5px; font-size: 13px; font-weight: bold; color: #bbb; transition: all 0.2s; }
+    .slot-box.active { border-color: #f1c40f; color: #f1c40f; background: rgba(241,196,15,0.25); transform: scale(1.06); }
+    
+    #current-weapon-name { font-size: 22px; font-weight: bold; color: #ffffff; }
+    #ammo-count { font-size: 42px; font-weight: 900; color: #f1c40f; }
+    #reload-msg { font-size: 18px; color: #e74c3c; font-weight: bold; display: none; animation: blink 0.8s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    #armory-menu { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,10,15,0.88); backdrop-filter: blur(6px); z-index: 30; color: white; }
+    .armory-box { background: #111827; border: 2px solid #374151; border-radius: 14px; padding: 26px 30px; width: 840px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 15px 40px rgba(0,0,0,0.9); text-align: center; }
+    .armory-box h2 { margin: 0 0 6px 0; color: #f1c40f; font-size: 28px; letter-spacing: 1px; }
+    .armory-sub { color: #9ca3af; font-size: 14px; margin-bottom: 18px; }
+
+    .armory-tabs { display: flex; gap: 10px; justify-content: center; margin-bottom: 22px; border-bottom: 2px solid #1f2937; padding-bottom: 14px; flex-wrap: wrap; }
+    .tab-btn { padding: 10px 20px; background: #1f2937; border: 2px solid #4b5563; color: #cbd5e1; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .tab-btn:hover { border-color: #f1c40f; color: #fff; }
+    .tab-btn.active { background: #f1c40f; border-color: #f1c40f; color: #111827; transform: translateY(-2px); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .weapon-card-list { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .weapon-card { background: #1f2937; border: 2px solid #4b5563; border-radius: 10px; padding: 16px 12px; width: 175px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
+    .weapon-card:hover { border-color: #f1c40f; transform: translateY(-4px); background: #283548; }
+    .weapon-card.equipped { border-color: #2ecc71; box-shadow: 0 0 12px rgba(46, 204, 113, 0.35); }
+    .weapon-card.laser-card:hover { border-color: #00f0ff; box-shadow: 0 0 12px rgba(0,240,255,0.4); }
+    .weapon-card.heavy-card:hover { border-color: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,0.4); }
+    .weapon-card h3 { margin: 0 0 8px 0; font-size: 17px; color: #fff; }
+    .weapon-card .spec { font-size: 12px; color: #d1d5db; margin: 3px 0; }
+    .weapon-card button { margin-top: 12px; width: 100%; padding: 8px; background: #f1c40f; color: #111827; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+    .weapon-card.laser-card button { background: #00f0ff; color: #05101a; }
+    .weapon-card.heavy-card button { background: #ef4444; color: #ffffff; }
+    #close-armory-btn { margin-top: 22px; padding: 9px 28px; background: #4b5563; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+    #settings-menu { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,10,15,0.85); backdrop-filter: blur(6px); z-index: 35; color: white; }
+    .settings-box { background: #111827; border: 2px solid #374151; border-radius: 14px; padding: 30px 36px; width: 420px; box-shadow: 0 12px 35px rgba(0,0,0,0.85); }
+    .settings-box h2 { margin: 0 0 22px 0; text-align: center; color: #f1c40f; font-size: 26px; letter-spacing: 1px; }
+    .setting-row { margin-bottom: 22px; }
+    .setting-label { display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #e5e7eb; }
+    .sound-btn { width: 100%; padding: 11px; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; background: #10b981; color: white; }
+    .sound-btn.muted { background: #ef4444; }
+    input[type="range"] { width: 100%; accent-color: #f1c40f; cursor: pointer; }
+    .settings-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+    #resume-btn { padding: 12px; background: #f1c40f; color: #111827; border: none; border-radius: 6px; font-size: 16px; font-weight: 900; cursor: pointer; }
+    #go-home-btn { padding: 10px; background: #374151; color: #e5e7eb; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; }
+
+    #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,15,20,0.85); backdrop-filter: blur(4px); text-align: center; color: white; z-index: 20; cursor: pointer; }
+    #overlay h2 { font-size: 38px; color: #ff4d4d; margin: 0 0 12px 0; }
+    #overlay p { font-size: 16px; color: #bdc3c7; margin: 5px 0; }
+    #overlay .start-btn { font-size: 20px; color: #f1c40f; margin-top: 18px; font-weight: bold; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="sniper-scope"></div>
+
+  <div id="hud">
+    <h1>ZOMBIE SURVIVAL</h1>
+    <div class="hud-stat">ROUND: <span id="round-text" style="color:#facc15;">1 / 50</span> · 남은 적: <span id="remain-count" style="color:#fb923c;">0</span></div>
+    <div class="hud-stat">KILLS: <span id="kill-count">0</span></div>
+    <div class="hud-stat">HP: <span id="hp-text">100</span> / 100</div>
+    <div id="hp-bar-bg"><div id="hp-bar"></div></div>
+    <div id="ult-ui">⚡ [V] 궁극기: READY</div>
+  </div>
+
+  <div id="boss-hud">
+    <div id="boss-name">💀 초대형 보스</div>
+    <div id="boss-bar-bg"><div id="boss-bar"></div></div>
+  </div>
+
+  <div id="top-right-hint">전장/난이도: <span id="hud-diff" style="color:#f1c40f;">보통</span> · [ESC] 설정 · [N] 무기고</div>
+
+  <div id="ammo-hud">
+    <div id="slot-list">
+      <div id="slot-1" class="slot-box active">[1] AK-47</div>
+      <div id="slot-2" class="slot-box">[2] Glock 권총</div>
+      <div id="slot-3" class="slot-box">[3] 전투 도끼</div>
+      <div id="slot-4" class="slot-box">[4] 수류탄</div>
+    </div>
+    <div id="current-weapon-name">AK-47</div>
+    <div id="reload-msg">RELOADING...</div>
+    <div id="ammo-display"><span id="ammo-count">30 / ∞</span></div>
+  </div>
+
+  <div id="armory-menu">
+    <div class="armory-box">
+      <h2>무기고 (ARMORY)</h2>
+      <p class="armory-sub">각 슬롯별로 원하는 무기를 선택해 장착하세요 ([N] 키로 닫기)</p>
+
+      <div class="armory-tabs">
+        <button class="tab-btn active" data-tab="tab-primary">[1] 주무기</button>
+        <button class="tab-btn" data-tab="tab-secondary">[2] 보조무기</button>
+        <button class="tab-btn" data-tab="tab-melee">[3] 근접무기</button>
+        <button class="tab-btn" data-tab="tab-heavy">[4] 투척/중화기</button>
+      </div>
+
+      <div id="tab-primary" class="tab-panel active">
+        <div class="weapon-card-list">
+          <div class="weapon-card" data-slot="1" data-weapon="ak47">
+            <div>
+              <h3>AK-47</h3>
+              <div class="spec">데미지: 40</div>
+              <div class="spec">연사속도: 빠름</div>
+              <div class="spec">장탄수: 30발</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="1" data-weapon="m4a1">
+            <div>
+              <h3>M4A1</h3>
+              <div class="spec">데미지: 28</div>
+              <div class="spec">연사속도: 초고속</div>
+              <div class="spec">장탄수: 30발</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="1" data-weapon="shotgun">
+            <div>
+              <h3>SPAS-12 샷건</h3>
+              <div class="spec">데미지: 24 × 8발</div>
+              <div class="spec">특수: 근접 광역 산탄</div>
+              <div class="spec">장탄수: 8발</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="1" data-weapon="sniper">
+            <div>
+              <h3>AWP 스나이퍼</h3>
+              <div class="spec">데미지: 180 (원샷)</div>
+              <div class="spec">연사속도: 느림</div>
+              <div class="spec">장탄수: 5발 (우클릭 줌)</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card laser-card" data-slot="1" data-weapon="laser">
+            <div>
+              <h3 style="color: #00f0ff;">팜 레이저</h3>
+              <div class="spec">데미지: 52 (연사)</div>
+              <div class="spec">특수: 적 다중 관통!</div>
+              <div class="spec">배터리: 35발</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="1" data-weapon="bow">
+            <div>
+              <h3 style="color: #2ecc71;">컴파운드 활</h3>
+              <div class="spec">데미지: 155 (단발)</div>
+              <div class="spec">특수: 정밀 화살 발사</div>
+              <div class="spec">탄창: 무제한 (∞)</div>
+            </div>
+            <button>1번 슬롯 장착</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-secondary" class="tab-panel">
+        <div class="weapon-card-list">
+          <div class="weapon-card" data-slot="2" data-weapon="pistol">
+            <div>
+              <h3>Glock 권총</h3>
+              <div class="spec">데미지: 26</div>
+              <div class="spec">특수: 빠른 기동 사격</div>
+              <div class="spec">장탄수: 15발</div>
+            </div>
+            <button>2번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="2" data-weapon="deagle">
+            <div>
+              <h3 style="color: #facc15;">데저트 이글</h3>
+              <div class="spec">데미지: 68 (고화력)</div>
+              <div class="spec">특수: 묵직한 대구경 한방</div>
+              <div class="spec">장탄수: 7발</div>
+            </div>
+            <button>2번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="2" data-weapon="sawedoff">
+            <div>
+              <h3 style="color: #fb923c;">샷건 권총</h3>
+              <div class="spec">데미지: 22 × 6발</div>
+              <div class="spec">특수: 근접 산탄 권총</div>
+              <div class="spec">장탄수: 4발</div>
+            </div>
+            <button>2번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="2" data-weapon="uzi">
+            <div>
+              <h3 style="color: #38bdf8;">기관권총 (UZI)</h3>
+              <div class="spec">데미지: 19 (자동연사)</div>
+              <div class="spec">특수: 초고속 연사력</div>
+              <div class="spec">장탄수: 25발</div>
+            </div>
+            <button>2번 슬롯 장착</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-melee" class="tab-panel">
+        <div class="weapon-card-list">
+          <div class="weapon-card" data-slot="3" data-weapon="axe">
+            <div>
+              <h3>전투 도끼</h3>
+              <div class="spec">데미지: 95</div>
+              <div class="spec">모션: 앞으로 찍기</div>
+              <div class="spec">탄창: 무제한 (∞)</div>
+            </div>
+            <button>3번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card" data-slot="3" data-weapon="machete">
+            <div>
+              <h3 style="color: #2ecc71;">긴 마체테</h3>
+              <div class="spec">데미지: 125</div>
+              <div class="spec">모션: 가로 횡베기</div>
+              <div class="spec">탄창: 무제한 (∞)</div>
+            </div>
+            <button>3번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card laser-card" data-slot="3" data-weapon="katana">
+            <div>
+              <h3 style="color: #00f0ff;">카타나 (일본도)</h3>
+              <div class="spec">데미지: 90 × 2연타</div>
+              <div class="spec">모션: 2연속 샤샥 X자 베기</div>
+              <div class="spec">탄창: 무제한 (∞)</div>
+            </div>
+            <button>3번 슬롯 장착</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-heavy" class="tab-panel">
+        <div class="weapon-card-list">
+          <div class="weapon-card" data-slot="4" data-weapon="grenade">
+            <div>
+              <h3>수류탄</h3>
+              <div class="spec">데미지: 300 (범위 10m)</div>
+              <div class="spec">특수: 포물선 투척 시한폭탄</div>
+              <div class="spec">보유량: 무제한 (∞)</div>
+            </div>
+            <button>4번 슬롯 장착</button>
+          </div>
+          <div class="weapon-card heavy-card" data-slot="4" data-weapon="bazooka">
+            <div>
+              <h3 style="color: #ef4444;">바주카포 (RPG)</h3>
+              <div class="spec">데미지: 500 (광역 14m)</div>
+              <div class="spec">특수: 직선 로켓 포탄 발사</div>
+              <div class="spec" style="color:#facc15;">장탄: 10발 (무기고 재교체 리필)</div>
+            </div>
+            <button>4번 슬롯 장착 / 10발 리필</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="close-armory-btn">닫기 (N)</button>
+    </div>
+  </div>
+
+  <div id="settings-menu">
+    <div class="settings-box">
+      <h2>게임 설정 (SETTINGS)</h2>
+
+      <div class="setting-row">
+        <div class="setting-label"><span>효과음 (SOUND)</span></div>
+        <button id="toggle-sound-btn" class="sound-btn">🔊 소리 켜짐 (ON)</button>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">
+          <span>마우스 민감도</span>
+          <span id="sens-val">1.0x</span>
+        </div>
+        <input type="range" id="sens-slider" min="0.2" max="2.5" step="0.1" value="1.0">
+      </div>
+
+      <div class="settings-actions">
+        <button id="resume-btn">게임 계속하기 (클릭)</button>
+        <button id="go-home-btn">인트로 화면으로 나가기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div>
+      <h2 id="modal-title">ZOMBIE MOUNTAIN</h2>
+      <p>조작: [W/A/S/D] 이동 · [Space 2번] 2단 점프 · [ESC] 설정</p>
+      <p>무기: [1] 주무기 · [2] 보조무기 · [3] 근접무기 · [4] 투척/바주카 · <strong>[N] 무기고</strong></p>
+      <p><strong>★ [V] 궁극기: 공중 강하 충격파 (쿨타임 30초)</strong></p>
+      <p>[좌클릭] 공격/발사 · [우클릭] 저격 줌 · [R] 장전</p>
+      <div id="modal-desc" class="start-btn">화면을 클릭하여 전투 시작!</div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
