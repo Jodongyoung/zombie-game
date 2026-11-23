@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZOMBIE MOUNTAIN: ULTIMATE SURVIVAL</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #6b93a3; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; }
+    canvas { display: block; }
+
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
+    #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #ffffff; box-shadow: 0 0 3px rgba(0,0,0,0.8); }
+    #crosshair::before { top: 6px; left: 0; width: 14px; height: 2px; }
+    #crosshair::after { top: 0; left: 6px; width: 2px; height: 14px; }
+
+    #sniper-scope { position: absolute; inset: 0; display: none; pointer-events: none; z-index: 15; background: radial-gradient(circle at center, transparent 38%, black 42%, black 100%); }
+    #sniper-scope::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: rgba(255, 0, 0, 0.8); }
+    #sniper-scope::after { content: ''; position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: rgba(255, 0, 0, 0.8); }
+
+    #hud { position: absolute; top: 24px; left: 24px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); pointer-events: none; z-index: 10; }
+    #hud h1 { margin: 0 0 4px 0; font-size: 24px; color: #ff4d4d; letter-spacing: 2px; }
+    .hud-stat { font-size: 19px; margin: 4px 0; font-weight: bold; }
+    #hp-bar-bg { width: 200px; height: 12px; background: rgba(0,0,0,0.6); border: 2px solid #222; border-radius: 4px; overflow: hidden; margin-top: 4px; margin-bottom: 8px;}
+    #hp-bar { width: 100%; height: 100%; background: #2ecc71; transition: width 0.15s; }
+    
+    /* 궁극기 UI */
+    #ult-ui { font-size: 22px; font-weight: 900; color: #00f0ff; animation: pulse 1.5s infinite; }
+    .ult-cd { color: #aaa !important; animation: none !important; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+
+    #ammo-hud { position: absolute; bottom: 24px; right: 32px; text-align: right; color: #ffffff; text-shadow: 0 2px 6px rgba(0,0,0,0.9); pointer-events: none; z-index: 10; }
+    #slot-list { display: flex; gap: 10px; justify-content: flex-end; margin-bottom: 8px; }
+    .slot-box { background: rgba(0,0,0,0.5); border: 2px solid #555; padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #aaa; transition: all 0.2s; }
+    .slot-box.active { border-color: #f1c40f; color: #f1c40f; background: rgba(241,196,15,0.25); transform: scale(1.08); }
+    
+    #current-weapon-name { font-size: 22px; font-weight: bold; color: #ffffff; }
+    #ammo-count { font-size: 44px; font-weight: 900; color: #f1c40f; }
+    #reload-msg { font-size: 18px; color: #e74c3c; font-weight: bold; display: none; animation: blink 0.8s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    #armory-menu { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,10,15,0.85); backdrop-filter: blur(6px); z-index: 30; color: white; }
+    .armory-box { background: #111827; border: 2px solid #374151; border-radius: 12px; padding: 28px 32px; width: 740px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center; }
+    .armory-box h2 { margin: 0 0 8px 0; color: #f1c40f; font-size: 28px; }
+    .armory-box p { color: #9ca3af; font-size: 14px; margin-bottom: 20px; }
+    .weapon-card-list { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .weapon-card { background: #1f2937; border: 2px solid #4b5563; border-radius: 8px; padding: 16px 10px; width: 155px; cursor: pointer; transition: all 0.2s; }
+    .weapon-card:hover { border-color: #f1c40f; transform: translateY(-4px); background: #283548; }
+    .weapon-card.laser-card:hover { border-color: #00f0ff; box-shadow: 0 0 12px rgba(0,240,255,0.4); }
+    .weapon-card h3 { margin: 0 0 6px 0; font-size: 17px; color: #fff; }
+    .weapon-card .spec { font-size: 12px; color: #d1d5db; margin: 4px 0; }
+    .weapon-card button { margin-top: 10px; width: 100%; padding: 8px; background: #f1c40f; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .weapon-card.laser-card button { background: #00f0ff; color: #05101a; }
+    #close-armory-btn { margin-top: 22px; padding: 8px 24px; background: #4b5563; color: white; border: none; border-radius: 6px; cursor: pointer; }
+
+    #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,15,20,0.85); backdrop-filter: blur(4px); text-align: center; color: white; z-index: 20; cursor: pointer; }
+    #overlay h2 { font-size: 40px; color: #ff4d4d; margin: 0 0 12px 0; }
+    #overlay p { font-size: 16px; color: #bdc3c7; margin: 5px 0; }
+    #overlay .start-btn { font-size: 20px; color: #f1c40f; margin-top: 18px; font-weight: bold; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="sniper-scope"></div>
+
+  <div id="hud">
+    <h1>ZOMBIE SURVIVAL</h1>
+    <div class="hud-stat">KILLS: <span id="kill-count">0</span></div>
+    <div class="hud-stat">HP: <span id="hp-text">100</span> / 100</div>
+    <div id="hp-bar-bg"><div id="hp-bar"></div></div>
+    <div id="ult-ui">⚡ [V] 궁극기: READY</div>
+  </div>
+
+  <div id="ammo-hud">
+    <div id="slot-list">
+      <div id="slot-1" class="slot-box active">[1] 주무기</div>
+      <div id="slot-2" class="slot-box">[2] 권총</div>
+      <div id="slot-3" class="slot-box">[3] 도끼</div>
+      <div id="slot-4" class="slot-box">[4] 수류탄</div>
+    </div>
+    <div id="current-weapon-name">AK-47</div>
+    <div id="reload-msg">RELOADING...</div>
+    <div id="ammo-display"><span id="ammo-count">30 / 30</span></div>
+  </div>
+
+  <div id="armory-menu">
+    <div class="armory-box">
+      <h2>무기고 (ARMORY)</h2>
+      <p>1번 슬롯에 장착할 주무기를 선택하세요 ([N] 키로 닫기)</p>
+      <div class="weapon-card-list">
+        <div class="weapon-card" id="select-ak47">
+          <h3>AK-47</h3>
+          <div class="spec">데미지: 40</div>
+          <div class="spec">연사속도: 빠름</div>
+          <div class="spec">장탄수: 30발</div>
+          <button>장착</button>
+        </div>
+        <div class="weapon-card" id="select-m4a1">
+          <h3>M4A1</h3>
+          <div class="spec">데미지: 28</div>
+          <div class="spec">연사속도: 초고속</div>
+          <div class="spec">장탄수: 30발</div>
+          <button>장착</button>
+        </div>
+        <div class="weapon-card" id="select-sniper">
+          <h3>AWP 스나이퍼</h3>
+          <div class="spec">데미지: 180 (원샷)</div>
+          <div class="spec">연사속도: 느림</div>
+          <div class="spec">장탄수: 5발 (우클릭 줌)</div>
+          <button>장착</button>
+        </div>
+        <div class="weapon-card laser-card" id="select-laser">
+          <h3 style="color: #00f0ff;">팜 레이저</h3>
+          <div class="spec">데미지: 52 (연사)</div>
+          <div class="spec">특수: 적 다중 관통!</div>
+          <div class="spec">배터리: 35발</div>
+          <button>장착</button>
+        </div>
+      </div>
+      <button id="close-armory-btn">닫기 (N)</button>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div>
+      <h2 id="modal-title">ZOMBIE MOUNTAIN</h2>
+      <p>조작: [W/A/S/D] 이동 · [Space 2번] 2단 점프</p>
+      <p>무기: [1,2,3] 총/도끼 · <strong>[4] 수류탄 투척</strong> · [N] 무기고</p>
+      <p><strong>★ [V] 궁극기: 공중 강하 충격파 (쿨타임 30초)</strong></p>
+      <p>[좌클릭] 공격/투척 · [우클릭] 저격 줌 · [R] 장전</p>
+      <div id="modal-desc" class="start-btn">화면을 클릭하여 전투 시작!</div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
