@@ -230,7 +230,7 @@ const DIFFICULTY_CFG = {
     zBaseSpeed: 2.2,
     zRoundSpeedStep: 0.04,
     zSpeedMult: 0.85,
-    dmgTaken: 0.65,
+    dmgTaken: 0.75,
     hasBoss: false,
     bossScaleWithRound: false,
     archerChance: 0.08,
@@ -258,7 +258,7 @@ const DIFFICULTY_CFG = {
     zBaseSpeed: 2.9,
     zRoundSpeedStep: 0.125,
     zSpeedMult: 1.22,
-    dmgTaken: 1.35,
+    dmgTaken: 1.25,
     hasBoss: true,
     bossScaleWithRound: true,
     archerChance: 0.22,
@@ -271,6 +271,17 @@ const diffCfg = DIFFICULTY_CFG[currentDiff];
 
 document.getElementById('hud-diff').textContent = `${mapCfg.name} · ${diffCfg.name} (최대 ${diffCfg.maxRounds}R)`;
 document.getElementById('modal-title').textContent = `ZOMBIE SURVIVAL : ${mapCfg.name}`;
+
+// 피격 시 화면 가장자리 붉은 플래시 오버레이
+const damageFlashEl = document.createElement('div');
+damageFlashEl.style.position = 'fixed';
+damageFlashEl.style.inset = '0';
+damageFlashEl.style.pointerEvents = 'none';
+damageFlashEl.style.zIndex = '14';
+damageFlashEl.style.background = 'radial-gradient(circle, transparent 55%, rgba(220, 38, 38, 0.55) 100%)';
+damageFlashEl.style.opacity = '0';
+damageFlashEl.style.transition = 'opacity 0.18s ease-out';
+document.body.appendChild(damageFlashEl);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(mapCfg.bg);
@@ -875,6 +886,7 @@ const potions = [];
 // ==========================================
 let kills = 0, hp = 100, gameOver = false, hasStarted = false, isLocked = false, isArmoryOpen = false, isSettingsOpen = false;
 let currentSlot = 1;
+let playerHitCooldown = 0; // 좀비 피격 무적 시간 (연속 1프레임 즉사 방지)
 
 let currentRound = 1;
 const maxRounds = diffCfg.maxRounds;
@@ -917,7 +929,8 @@ let katanaSecondHitDone = false;
 let katanaSecondDamage = 90;
 
 const playerPos = new THREE.Vector3(0, 1.7, 0); const playerVel = new THREE.Vector3();
-let isGrounded = true, jumpCount = 0, cameraYaw = 0, cameraPitch = 0; const keys = {};
+let isGrounded = true, jumpCount = 0, cameraYaw = 0, cameraPitch = 0;
+const keyCodes = {}; // 한/영 키 상태 무관하게 물리 키 코드(e.code)로 이동/조작 추적
 let ultCooldown = 0, isUltFalling = false;
 let mouseSensMult = 1.0;
 
@@ -1595,9 +1608,29 @@ function updateHPUI() {
   document.getElementById('hp-bar').style.background = hp > 30 ? '#2ecc71' : '#e74c3c';
 }
 
-function takeDamage(dmg) {
-  const realDmg = Math.round(dmg * diffCfg.dmgTaken);
-  hp = Math.max(0, hp - realDmg); updateHPUI();
+function triggerDamageFlash() {
+  damageFlashEl.style.opacity = '1';
+  setTimeout(() => {
+    damageFlashEl.style.opacity = '0';
+  }, 160);
+}
+
+// 좀비 접촉(exactDamage = 30) 시 0.85초 무적 쿨타임 적용 + 투사체 피해 분리
+function takeDamage(dmg, isZombieTouch = false) {
+  if (gameOver) return;
+
+  if (isZombieTouch) {
+    if (playerHitCooldown > 0) return;
+    playerHitCooldown = 0.85; // 한 번 닿인 뒤 0.85초간 연속 피격 방지
+    hp = Math.max(0, hp - 30); // 좀비에 한 번 닿을 때마다 정확히 30씩 감소 (3~4타 생존)
+    triggerDamageFlash();
+  } else {
+    const realDmg = Math.round(dmg * diffCfg.dmgTaken);
+    hp = Math.max(0, hp - realDmg);
+    triggerDamageFlash();
+  }
+
+  updateHPUI();
   if (hp <= 0 && !gameOver) {
     clearBannerMessage();
     gameOver = true;
@@ -1625,6 +1658,7 @@ function resetGame() {
   for (const p of potions) scene.remove(p.mesh); potions.length = 0;
 
   kills = 0; hp = 100; currentSlot = 1;
+  playerHitCooldown = 0;
   activeBoss = null;
   updateBossHUD();
 
@@ -1740,7 +1774,7 @@ function toggleArmory() {
     armoryMenu.style.display = 'flex';
   } else {
     armoryMenu.style.display = 'none';
-    document.body.requestPointerLock();
+    requestSafePointerLock();
   }
 }
 document.getElementById('close-armory-btn').addEventListener('click', toggleArmory);
@@ -1757,7 +1791,7 @@ function openSettings() {
 function closeSettings() {
   isSettingsOpen = false;
   document.getElementById('settings-menu').style.display = 'none';
-  document.body.requestPointerLock();
+  requestSafePointerLock();
 }
 
 const toggleSoundBtn = document.getElementById('toggle-sound-btn');
@@ -1808,44 +1842,68 @@ function startReload() {
 }
 
 // ==========================================
-// 8. 조작 이벤트
+// 8. 조작 이벤트 (한/영 키 무관 e.code 기반 + Space/V 완전 수정)
 // ==========================================
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 window.addEventListener('keydown', (e) => {
-  const k = e.key.toLowerCase(); keys[k] = true;
+  const code = e.code;
+  keyCodes[code] = true;
 
-  if (e.key === 'Escape' && hasStarted && !gameOver && !isArmoryOpen) {
+  // 스페이스바 기본 스크롤/버튼 클릭 방지
+  if (code === 'Space') {
+    e.preventDefault();
+  }
+
+  if (code === 'Escape' && hasStarted && !gameOver && !isArmoryOpen) {
     if (isSettingsOpen) closeSettings();
     else openSettings();
     return;
   }
 
-  if (!isLocked || gameOver || isSettingsOpen) return;
+  // 게임 진행 중이면 포인터 락 일시 해제 환경에서도 키 입력 정상 작동
+  if (!hasStarted || gameOver || isSettingsOpen) return;
 
-  if (e.code === 'Space') {
+  // [Space] 2단 점프 (한/영 및 버튼 포커스 무관하게 확실히 발동)
+  if (code === 'Space' && !e.repeat) {
     if (jumpCount < 2) {
-      playerVel.y = jumpCount === 0 ? 8.5 : 8.0; jumpCount++; isGrounded = false;
+      playerVel.y = jumpCount === 0 ? 8.8 : 8.2;
+      jumpCount++;
+      isGrounded = false;
     }
   }
 
-  if (k === 'v' && ultCooldown <= 0 && isGrounded && !isUltFalling) {
-    playerVel.y = 28; isGrounded = false; isUltFalling = true; playSound('boom');
+  // [V] 궁극기 (한글 'ㅍ' 상태여도 e.code === 'KeyV'로 즉시 발동, 지상/공중 모두 가능)
+  if (code === 'KeyV' && !e.repeat && ultCooldown <= 0 && !isUltFalling) {
+    playerVel.y = 28;
+    isGrounded = false;
+    isUltFalling = true;
+    playSound('boom');
   }
 
-  if (['1','2','3','4'].includes(k)) {
-    currentSlot = parseInt(k); isReloading = false; meleeSwingTimer = 0;
+  // [1 ~ 4] 슬롯 전환
+  if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(code)) {
+    currentSlot = parseInt(code.replace('Digit', ''), 10);
+    isReloading = false;
+    meleeSwingTimer = 0;
     document.getElementById('reload-msg').style.display = 'none';
     updateWeaponVisuals();
   }
 
-  if (k === 'r' && activeWeaponKey !== 'bazooka' && WEAPONS_DATA[activeWeaponKey].mag !== Infinity && !isReloading) {
+  // [R] 장전 (한글 'ㄱ' 상태에서도 정상 작동)
+  if (code === 'KeyR' && activeWeaponKey !== 'bazooka' && WEAPONS_DATA[activeWeaponKey].mag !== Infinity && !isReloading) {
     if (ammoState[activeWeaponKey] < WEAPONS_DATA[activeWeaponKey].mag) startReload();
   }
 
-  if (k === 'n') toggleArmory();
+  // [N] 무기고 열기/닫기 (한글 'ㅜ' 상태에서도 정상 작동)
+  if (code === 'KeyN' && !e.repeat) {
+    toggleArmory();
+  }
 });
-window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+window.addEventListener('keyup', (e) => {
+  keyCodes[e.code] = false;
+});
 
 window.addEventListener('mousedown', (e) => {
   if (!isLocked || gameOver || isSettingsOpen) return;
@@ -2030,7 +2088,8 @@ renderer.setAnimationLoop((time) => {
   }
 
   if (isLocked && !gameOver && !isSettingsOpen) {
-    if (ultCooldown > 0) { ultCooldown -= dt; updateUltUI(); }
+    if (ultCooldown > 0) { ultCooldown = Math.max(0, ultCooldown - dt); updateUltUI(); }
+    if (playerHitCooldown > 0) { playerHitCooldown = Math.max(0, playerHitCooldown - dt); }
 
     if (isRoundTransition) {
       roundClearTimer -= dt;
@@ -2042,8 +2101,10 @@ renderer.setAnimationLoop((time) => {
     const euler = new THREE.Euler(0, 0, 0, 'YXZ'); euler.x = cameraPitch; euler.y = cameraYaw; camera.quaternion.setFromEuler(euler);
 
     const moveDir = new THREE.Vector3();
-    if (keys['w']) moveDir.z -= 1; if (keys['s']) moveDir.z += 1;
-    if (keys['a']) moveDir.x -= 1; if (keys['d']) moveDir.x += 1;
+    if (keyCodes['KeyW']) moveDir.z -= 1;
+    if (keyCodes['KeyS']) moveDir.z += 1;
+    if (keyCodes['KeyA']) moveDir.x -= 1;
+    if (keyCodes['KeyD']) moveDir.x += 1;
     moveDir.normalize(); moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
 
     const speed = 7.5;
@@ -2337,9 +2398,12 @@ renderer.setAnimationLoop((time) => {
           z.group.position.y = 0; z.velY = 0; z.isGrounded = true;
         }
 
+        // 좀비에게 닿일 때마다 정확히 체력 30 감소 + 0.85초 무적 쿨타임 + 살짝 뒤로 밀어냄
         if (dist <= minKeepDist + 0.45 && z.group.position.y < playerPos.y + 1.5 && !isUltFalling) {
-          const rawDmg = z.type === 'boss' ? 35 : (z.type === 'tank' ? 24 : 15);
-          takeDamage(rawDmg);
+          if (playerHitCooldown <= 0) {
+            takeDamage(30, true);
+            moveEntityTowardTarget(z.group.position, -dirX, -dirZ, 1.4, entityRadius, z.steerSign);
+          }
         }
       }
     }
@@ -2384,7 +2448,7 @@ renderer.setAnimationLoop((time) => {
       a.life -= dt;
       a.mesh.position.add(a.vel.clone().multiplyScalar(dt));
       if (a.mesh.position.distanceTo(playerPos) < 1.15) {
-        takeDamage(18);
+        takeDamage(15, false);
         a.life = 0;
       }
       if (a.life <= 0) {
@@ -2415,13 +2479,22 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+function requestSafePointerLock() {
+  try {
+    const req = document.body.requestPointerLock();
+    if (req && typeof req.catch === 'function') {
+      req.catch(() => {});
+    }
+  } catch (e) {}
+}
+
 document.getElementById('overlay').addEventListener('click', () => {
   initAudio(() => {
     if (!hasStarted || gameOver) {
       hasStarted = true;
       resetGame();
     }
-    document.body.requestPointerLock();
+    requestSafePointerLock();
   });
 });
 
